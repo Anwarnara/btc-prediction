@@ -27,6 +27,7 @@ from models import model_manager
 from settings import get as setting_get, get_all as settings_all, update as settings_update
 from trainer import train_vps_models
 from cache import sync_cache_from_api, load_cache, get_cache_size
+from correction import append_correction, train_indodax_adapter, load_corrections, CORRECTIONS_FILE, ADAPTER_MODEL, ADAPTER_META
 
 # ──────────────────────────────────────────────
 # Background sync + auto-train + accuracy tracking
@@ -40,6 +41,7 @@ _train_running = False
 _last_retrain_time = 0
 _accuracy_log: list[dict] = []
 _wrong_examples: list[dict] = []
+_logged_correction_keys: set[str] = set()
 
 # Backend status for frontend
 _backend_status = {
@@ -57,7 +59,7 @@ _backend_status = {
 
 def evaluate_last_prediction():
     """Compare last prediction against actual price movement. Returns accuracy stats."""
-    global _accuracy_log, _wrong_examples
+    global _accuracy_log, _wrong_examples, _logged_correction_keys
     rows = load_cache()
     if len(rows) < 3:
         return None
@@ -94,6 +96,38 @@ def evaluate_last_prediction():
 
     pc_correct = (pc_ens >= 50) == actual_up
     vps_correct = (vps_ens is not None and (vps_ens >= 50) == actual_up) if vps_ens else None
+
+    # Persist every evaluated t+5 outcome for Indodax adapter training.
+    try:
+        feat_row = df_feat[TREE_5M_FEATURE_NAMES].iloc[pred_idx:pred_idx + 1]
+        pred_time = str(df_feat.index[pred_idx])
+        actual_time = str(df_feat.index[-1])
+        key = f"{pred_time}->{actual_time}"
+        if key not in _logged_correction_keys:
+            probs_for_log = dict(probs)
+            append_correction({
+                "key": key,
+                "pred_time": pred_time,
+                "actual_time": actual_time,
+                "features": feat_row.iloc[0].to_dict(),
+                "target": 1 if actual_up else 0,
+                "actual_up": actual_up,
+                "price_before": prev_price,
+                "price_after": curr_price,
+                "pc_pred": round(pc_ens, 4),
+                "vps_pred": round(vps_ens, 4) if vps_ens is not None else None,
+                "tcn_pred": round(tcn_prev, 4) if tcn_prev is not None else None,
+                "catboost_pred": probs_for_log.get("cb_pc"),
+                "lightgbm_pred": probs_for_log.get("lgb_pc"),
+                "adapter_pred": probs_for_log.get("adapter"),
+                "pc_correct": bool(pc_correct),
+                "logged_at": datetime.now(WIB).isoformat(),
+            })
+            _logged_correction_keys.add(key)
+            if len(_logged_correction_keys) > 5000:
+                _logged_correction_keys = set(list(_logged_correction_keys)[-2500:])
+    except Exception as e:
+        print(f"[Correction] log failed: {e}")
 
     # Record wrong prediction for future weighted retraining
     if not pc_correct:
@@ -316,6 +350,7 @@ def make_prediction_row(df: pd.DataFrame) -> dict:
             "tcn": round(tcn_prob, 2) if tcn_prob is not None else None,
             "catboost": probs.get("cb_pc"),
             "lightgbm": probs.get("lgb_pc"),
+            "adapter": probs.get("adapter"),
             "ensemble": round(pc_ensemble, 2) if pc_ensemble is not None else None,
             "direction": "UP" if (pc_ensemble or 0) >= 50 else "DOWN",
             "tcn_available": tcn_prob is not None,
@@ -662,6 +697,28 @@ async def trigger_training():
         return result
     finally:
         _train_running = False
+
+
+@app.get("/api/corrections")
+async def corrections_status():
+    rows = load_corrections()
+    wrong = sum(1 for r in rows if r.get("pc_correct") is False)
+    return {
+        "file": str(CORRECTIONS_FILE),
+        "samples": len(rows),
+        "wrong_samples": wrong,
+        "adapter_exists": os.path.exists(ADAPTER_MODEL),
+        "adapter_meta": json.load(open(ADAPTER_META)) if os.path.exists(ADAPTER_META) else None,
+    }
+
+
+@app.post("/api/train-adapter")
+async def trigger_adapter_training(min_samples: int = Query(default=500, ge=50, le=50000)):
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, train_indodax_adapter, min_samples)
+    if "error" not in result:
+        model_manager.reload_adapter()
+    return result
 
 
 # ──────────────────────────────────────────────

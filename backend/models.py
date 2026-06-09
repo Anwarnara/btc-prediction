@@ -16,6 +16,7 @@ import numpy as np
 import joblib
 import pandas as pd
 from catboost import CatBoostClassifier
+from pathlib import Path
 from features import (
     TCN_5M_FEATURE_NAMES,
     TREE_5M_FEATURE_NAMES,
@@ -32,6 +33,8 @@ TCN_META = os.path.join(TCN_DIR, "metadata_tcn_lite_5m.json")
 CB_PATH = os.path.join(TREE_DIR, "catboost_btc_5m.cbm")
 LGB_PATH = os.path.join(TREE_DIR, "lightgbm_btc_5m.pkl")
 ENSEMBLE_META = os.path.join(TREE_DIR, "metadata_ensemble_catboost_lightgbm_5m.json")
+ADAPTER_PATH = "/var/www/btc/models/IndodaxAdapter/catboost_indodax_adapter.cbm"
+ADAPTER_META = "/var/www/btc/models/IndodaxAdapter/metadata_indodax_adapter.json"
 
 
 def _load_json(path: str, default=None):
@@ -65,6 +68,9 @@ class ModelManager:
         # Names kept for old dashboard fields. New models are PC/pretrained models.
         self.cb_vps = None
         self.lgb_vps = None
+
+        self.cb_adapter: CatBoostClassifier | None = None
+        self.adapter_meta = {}
 
         self._loaded = False
 
@@ -104,12 +110,30 @@ class ModelManager:
         self.cb_vps = self.cb_pc
         self.lgb_vps = self.lgb_pc
 
+    def load_adapter_model(self):
+        if os.path.exists(ADAPTER_PATH):
+            try:
+                self.cb_adapter = CatBoostClassifier()
+                self.cb_adapter.load_model(ADAPTER_PATH)
+                self.adapter_meta = _load_json(ADAPTER_META, {})
+                print(f"[Adapter] CatBoost Indodax loaded: {ADAPTER_PATH}")
+            except Exception as e:
+                print(f"[Adapter] Load failed: {e}")
+                self.cb_adapter = None
+        else:
+            self.cb_adapter = None
+            self.adapter_meta = {}
+
+    def reload_adapter(self):
+        self.load_adapter_model()
+
     def load_all(self, force: bool = False):
         if self._loaded and not force:
             return
         self.load_tcn_model()
         self.load_pc_models()
         self.load_vps_models()
+        self.load_adapter_model()
         self._loaded = True
 
     def _tcn_seq_len(self) -> int:
@@ -196,6 +220,19 @@ class ModelManager:
                 print(f"[TREE-5M] LightGBM prediction failed: {e}")
         return result
 
+    def predict_adapter(self, X: pd.DataFrame) -> float | None:
+        if self.cb_adapter is None:
+            return None
+        missing = [c for c in TREE_5M_FEATURE_NAMES if c not in X.columns]
+        if missing:
+            return None
+        try:
+            X_data = X[TREE_5M_FEATURE_NAMES].copy().replace([np.inf, -np.inf], np.nan).fillna(0)
+            return float(self.cb_adapter.predict_proba(X_data)[0][1]) * 100
+        except Exception as e:
+            print(f"[Adapter] Prediction failed: {e}")
+            return None
+
     def predict(self, X: pd.DataFrame) -> dict:
         """Predict from active 5m CatBoost/LightGBM models. Keeps old keys for frontend compatibility."""
         self.load_all()
@@ -203,6 +240,9 @@ class ModelManager:
         result.update(self._predict_tree_pair(X, self.cb_pc, self.lgb_pc, "cb_pc", "lgb_pc"))
         # VPS comparison fields mirror active pretrained models until separate VPS 5m models are trained.
         result.update(self._predict_tree_pair(X, self.cb_vps, self.lgb_vps, "cb_vps", "lgb_vps"))
+        adapter = self.predict_adapter(X)
+        if adapter is not None:
+            result["adapter"] = adapter
         return result
 
     def _usable_tree_model(self, model) -> bool:
@@ -242,7 +282,16 @@ class ModelManager:
         if not vals:
             return None
         total_w = sum(weights) or len(vals)
-        return round(sum(v * w for v, w in zip(vals, weights)) / total_w, 2)
+        base = sum(v * w for v, w in zip(vals, weights)) / total_w
+
+        # Optional Indodax correction adapter. It only appears after enough live
+        # t+5 outcomes have been logged and trained. Keep weight modest.
+        adapter_val = probs.get("adapter")
+        if adapter_val is not None:
+            aw = float(sget('adapter_weight', 0.30) or 0.30)
+            aw = max(0.0, min(0.7, aw))
+            base = base * (1 - aw) + adapter_val * aw
+        return round(base, 2)
 
     def ensemble_vps(self, probs: dict) -> float | None:
         """Tree-only 5m ensemble used as VPS/comparison field."""

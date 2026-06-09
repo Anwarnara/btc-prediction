@@ -11,6 +11,7 @@ export interface DashboardData {
     tcn_available?: boolean
     catboost: number | null
     lightgbm: number | null
+    adapter?: number | null
     ensemble: number | null
     direction: "UP" | "DOWN"
   }

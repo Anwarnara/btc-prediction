@@ -278,7 +278,7 @@ function PredictionPanel({ title, description, prediction, icon: Icon }: { title
           <div className={up ? "text-emerald-400" : "text-red-400"}>{up ? <TrendingUp className="size-9" /> : <TrendingDown className="size-9" />}</div>
         </div>
         <Separator />
-        <div className="grid grid-cols-3 gap-2 text-xs">
+        <div className="grid grid-cols-4 gap-2 text-xs">
           <div>
             <p className="text-muted-foreground">Ensemble</p>
             <p className="font-mono font-medium">{prediction.ensemble ?? "—"}%</p>
@@ -290,6 +290,10 @@ function PredictionPanel({ title, description, prediction, icon: Icon }: { title
           <div>
             <p className="text-muted-foreground">LightGBM</p>
             <p className="font-mono font-medium">{prediction.lightgbm?.toFixed(1) ?? "—"}%</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Adapter</p>
+            <p className="font-mono font-medium">{prediction.adapter?.toFixed(1) ?? "—"}%</p>
           </div>
         </div>
       </CardContent>
