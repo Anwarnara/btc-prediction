@@ -1,0 +1,250 @@
+{
+  "active": true,
+  "initial_capital": 10000000.0,
+  "capital": 9963046.210179832,
+  "position": null,
+  "entry_price": 1133412000.0,
+  "btc_amount": 0.0,
+  "trades": [
+    {
+      "time": "2026-06-08T19:04:17.805562+07:00",
+      "action": "BUY",
+      "price": 1150812000.0,
+      "prediction": 55.4,
+      "btc_amount": 0.00868952,
+      "capital": 10000000.0
+    },
+    {
+      "time": "2026-06-08T19:16:28.689658+07:00",
+      "action": "SELL",
+      "price": 1146672000.0,
+      "prediction": 36.6,
+      "btc_amount": 0.00868952,
+      "capital": 9964025.0,
+      "pnl": -35975.0
+    },
+    {
+      "time": "2026-06-09T00:12:47.879206+07:00",
+      "action": "BUY",
+      "price": 1155921000.0,
+      "prediction": 50.9,
+      "btc_amount": 0.00861999,
+      "capital": 9964025.0
+    },
+    {
+      "time": "2026-06-09T00:17:49.323869+07:00",
+      "action": "SELL",
+      "price": 1156380000.0,
+      "prediction": 39.1,
+      "btc_amount": 0.00861999,
+      "capital": 9967982.0,
+      "pnl": -32018.0
+    },
+    {
+      "time": "2026-06-09T00:33:54.088872+07:00",
+      "action": "BUY",
+      "price": 1158382000.0,
+      "prediction": 52.5,
+      "btc_amount": 0.00860509,
+      "capital": 9967982.0
+    },
+    {
+      "time": "2026-06-09T00:35:54.686362+07:00",
+      "action": "SELL",
+      "price": 1158079000.0,
+      "prediction": 39.3,
+      "btc_amount": 0.00860509,
+      "capital": 9965375.0,
+      "pnl": -34625.0
+    },
+    {
+      "time": "2026-06-09T02:36:18.623294+07:00",
+      "action": "BUY",
+      "price": 1157116000.0,
+      "prediction": 59.0,
+      "btc_amount": 0.00861225,
+      "capital": 9965375.0
+    },
+    {
+      "time": "2026-06-09T02:37:19.031444+07:00",
+      "action": "SELL",
+      "price": 1157020000.0,
+      "prediction": 39.2,
+      "btc_amount": 0.00861225,
+      "capital": 9964548.0,
+      "pnl": -35452.0
+    },
+    {
+      "time": "2026-06-09T02:43:21.631778+07:00",
+      "action": "BUY",
+      "price": 1157383000.0,
+      "prediction": 57.9,
+      "btc_amount": 0.00860955,
+      "capital": 9964548.0
+    },
+    {
+      "time": "2026-06-09T02:44:22.169079+07:00",
+      "action": "SELL",
+      "price": 1157020000.0,
+      "prediction": 28.4,
+      "btc_amount": 0.00860955,
+      "capital": 9961423.0,
+      "pnl": -38577.0
+    },
+    {
+      "time": "2026-06-09T02:47:23.440828+07:00",
+      "action": "BUY",
+      "price": 1157077000.0,
+      "prediction": 65.0,
+      "btc_amount": 0.00860913,
+      "capital": 9961423.0
+    },
+    {
+      "time": "2026-06-09T02:48:23.845865+07:00",
+      "action": "SELL",
+      "price": 1157020000.0,
+      "prediction": 24.5,
+      "btc_amount": 0.00860913,
+      "capital": 9960932.0,
+      "pnl": -39068.0
+    },
+    {
+      "time": "2026-06-09T02:50:24.677685+07:00",
+      "action": "BUY",
+      "price": 1157077000.0,
+      "prediction": 57.4,
+      "btc_amount": 0.0086087,
+      "capital": 9960932.0
+    },
+    {
+      "time": "2026-06-09T02:51:25.084163+07:00",
+      "action": "SELL",
+      "price": 1157020000.0,
+      "prediction": 28.9,
+      "btc_amount": 0.0086087,
+      "capital": 9960441.0,
+      "pnl": -39559.0
+    },
+    {
+      "time": "2026-06-09T03:52:52.688160+07:00",
+      "action": "BUY",
+      "price": 1153975000.0,
+      "prediction": 58.0,
+      "btc_amount": 0.00863142,
+      "capital": 9960441.0
+    },
+    {
+      "time": "2026-06-09T03:53:52.958314+07:00",
+      "action": "SELL",
+      "price": 1155597000.0,
+      "prediction": 36.1,
+      "btc_amount": 0.00863142,
+      "capital": 9974441.0,
+      "pnl": -25559.0
+    },
+    {
+      "time": "2026-06-09T03:55:53.519129+07:00",
+      "action": "BUY",
+      "price": 1154410000.0,
+      "prediction": 55.5,
+      "btc_amount": 0.00864029,
+      "capital": 9974441.0
+    },
+    {
+      "time": "2026-06-09T03:56:53.776501+07:00",
+      "action": "SELL",
+      "price": 1154410000.0,
+      "prediction": 38.5,
+      "btc_amount": 0.00864029,
+      "capital": 9974441.0,
+      "pnl": -25559.0
+    },
+    {
+      "time": "2026-06-09T04:30:04.032697+07:00",
+      "action": "BUY",
+      "price": 1161193000.0,
+      "prediction": 58.9,
+      "btc_amount": 0.00858982,
+      "capital": 9974441.0
+    },
+    {
+      "time": "2026-06-09T04:32:04.893107+07:00",
+      "action": "SELL",
+      "price": 1160905000.0,
+      "prediction": 28.3,
+      "btc_amount": 0.00858982,
+      "capital": 9971967.0,
+      "pnl": -28033.0
+    },
+    {
+      "time": "2026-06-09T04:47:11.562443+07:00",
+      "action": "BUY",
+      "price": 1161072000.0,
+      "prediction": 64.5,
+      "btc_amount": 0.00858859,
+      "capital": 9971967.0
+    },
+    {
+      "time": "2026-06-09T04:50:12.914894+07:00",
+      "action": "SELL",
+      "price": 1162080000.0,
+      "prediction": 40.0,
+      "btc_amount": 0.00858859,
+      "capital": 9980625.0,
+      "pnl": -19375.0
+    },
+    {
+      "time": "2026-06-09T05:08:45.239650+07:00",
+      "action": "BUY",
+      "price": 1157072000.0,
+      "prediction": 70.6,
+      "btc_amount": 0.00862576,
+      "capital": 9980625.0
+    },
+    {
+      "time": "2026-06-09T05:18:55.377677+07:00",
+      "action": "SELL",
+      "price": 1153510000.0,
+      "prediction": 12.9,
+      "btc_amount": 0.00862576,
+      "capital": 9949900.0,
+      "pnl": -50100.0
+    },
+    {
+      "time": "2026-06-09T08:08:13.476658+07:00",
+      "action": "BUY",
+      "price": 1146531000.0,
+      "prediction": 51.1,
+      "btc_amount": 0.00867826,
+      "capital": 9949900.0
+    },
+    {
+      "time": "2026-06-09T08:16:37.341768+07:00",
+      "action": "SELL",
+      "price": 1145500000.0,
+      "prediction": 21.5,
+      "btc_amount": 0.00867826,
+      "capital": 9940953.0,
+      "pnl": -59047.0
+    },
+    {
+      "time": "2026-06-09T17:04:00.491063+07:00",
+      "action": "BUY",
+      "price": 1133412000.0,
+      "prediction": 55.6,
+      "btc_amount": 0.00877082,
+      "capital": 9940953.0
+    },
+    {
+      "time": "2026-06-09T17:19:41.230384+07:00",
+      "action": "SELL",
+      "price": 1135931000.0,
+      "prediction": 28.8,
+      "btc_amount": 0.00877082,
+      "capital": 9963046.0,
+      "pnl": -36954.0
+    }
+  ],
+  "last_action": "SELL@Rp 1,135,931,000 (29%)",
+  "started_at": "2026-06-08T16:45:52.619013+07:00"
+}

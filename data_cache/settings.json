@@ -1,0 +1,23 @@
+{
+  "sync_interval": 60,
+  "auto_train_min_rows": 30,
+  "retrain_cooldown": 300,
+  "accuracy_threshold": 45,
+  "trade_buy_threshold": 50,
+  "trade_sell_threshold": 30,
+  "unrealized_loss_threshold": -5.0,
+  "max_wrong_examples": 200,
+  "max_acc_log": 50,
+  "consecutive_wrong_retrain": 5,
+  "tcn_weight": 0.95,
+  "multi_tf_5m_weight": 0.3,
+  "lgb_biased_min": 20,
+  "lgb_biased_max": 80,
+  "chart_hist_limit": 120,
+  "chart_forecast_bars": 20,
+  "tcn_sequence_length": 60,
+  "ml_iterations_max": 300,
+  "ml_iterations_min": 50,
+  "ml_learning_rate": 0.08,
+  "ml_depth": 5
+}

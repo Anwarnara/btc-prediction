@@ -1,0 +1,16 @@
+{
+"meta":{"test_sets":["test"],"test_metrics":[{"best_value":"Max","name":"Accuracy"},{"best_value":"Min","name":"Logloss"}],"learn_metrics":[{"best_value":"Max","name":"Accuracy"},{"best_value":"Min","name":"Logloss"}],"launch_mode":"Train","parameters":"","iteration_count":300,"learn_sets":["learn"],"name":"experiment"},
+"iterations":[
+{"learn":[0.6200274348,0.6872813749],"iteration":0,"passed_time":0.003055944792,"remaining_time":0.9137274927,"test":[0.5860655738,0.6895970029]},
+{"learn":[0.6415180613,0.6811646969],"iteration":1,"passed_time":0.005571798235,"remaining_time":0.8301979371,"test":[0.5942622951,0.6868635433]},
+{"learn":[0.642432556,0.6767312795],"iteration":2,"passed_time":0.007806477384,"remaining_time":0.772841261,"test":[0.5778688525,0.6852856069]},
+{"learn":[0.6415180613,0.6729309054],"iteration":3,"passed_time":0.01019183994,"remaining_time":0.7541961558,"test":[0.5819672131,0.6843397776]},
+{"learn":[0.6433470508,0.6689835849],"iteration":4,"passed_time":0.01274619494,"remaining_time":0.7520255013,"test":[0.5696721311,0.6830282208]},
+{"learn":[0.642432556,0.6647426356],"iteration":5,"passed_time":0.01499929857,"remaining_time":0.7349656301,"test":[0.5737704918,0.682248121]},
+{"learn":[0.6438042981,0.6608030575],"iteration":6,"passed_time":0.01740056226,"remaining_time":0.7283378201,"test":[0.5655737705,0.6819727097]},
+{"learn":[0.6465477824,0.6576164866],"iteration":7,"passed_time":0.01972521173,"remaining_time":0.719970228,"test":[0.5737704918,0.682587853]},
+{"learn":[0.6438042981,0.6556418346],"iteration":8,"passed_time":0.02208133068,"remaining_time":0.7139630254,"test":[0.5655737705,0.6820352525]},
+{"learn":[0.6451760402,0.6531471988],"iteration":9,"passed_time":0.024489264,"remaining_time":0.7101886561,"test":[0.5696721311,0.6815311381]},
+{"learn":[0.6451760402,0.6509819025],"iteration":10,"passed_time":0.02721911348,"remaining_time":0.7151203452,"test":[0.5696721311,0.6818686804]},
+{"learn":[0.6479195245,0.6488415232],"iteration":11,"passed_time":0.02946269377,"remaining_time":0.7071046504,"test":[0.5655737705,0.6827215133]}
+]}

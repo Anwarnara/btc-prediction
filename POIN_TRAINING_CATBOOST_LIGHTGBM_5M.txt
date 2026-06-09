@@ -1,0 +1,487 @@
+POIN TRAINING MODEL CATBOOST & LIGHTGBM BTC PREDIKSI 5 MENIT
+=============================================================
+
+1. Tujuan model
+---------------
+Model: CatBoostClassifier + LightGBMClassifier
+Pair: BTC
+Data interval: 1 menit
+Prediksi: arah harga 5 menit ke depan
+Output: prob_up 0–1 atau 0–100
+
+Fungsi model:
+- CatBoost: model tabular utama, kuat untuk fitur teknikal dan data tidak terlalu besar.
+- LightGBM: model pembanding/ensemble, cepat dan bagus untuk banyak fitur.
+
+2. Target prediksi
+------------------
+Gunakan horizon 5 menit:
+
+future_return = Close[t+5] / Close[t] - 1
+
+Label:
+Target = 1 jika future_return > +0.05%
+Target = 0 jika future_return < -0.05%
+Buang sample jika -0.05% <= future_return <= +0.05%
+
+Tujuan:
+Model tidak dipaksa menebak gerakan noise sangat kecil.
+
+Catatan:
+Target 1 menit terlalu noisy.
+Target 5 menit lebih cocok untuk trading decision.
+
+3. Bentuk data tabular
+----------------------
+CatBoost/LightGBM tidak pakai sequence 3D seperti TCN.
+
+Bentuk input:
+X shape = (samples, n_features)
+y shape = (samples,)
+
+Contoh:
+X[t] = fitur teknikal pada menit t
+y[t] = arah harga pada t+5
+
+4. Data interval
+----------------
+Gunakan candle 1 menit sebagai basis:
+Open, High, Low, Close, Volume
+
+Tapi jangan masukkan harga mentah sebagai fitur utama.
+
+5. Jangan pakai harga absolut
+-----------------------------
+Jangan input langsung:
+Open mentah
+High mentah
+Low mentah
+Close mentah
+
+Alasan:
+BTC/USDT dan BTC/IDR beda skala.
+Harga absolut bikin model domain shift.
+
+Gunakan fitur relatif/persentase.
+
+6. Fitur return wajib
+---------------------
+Ret_1m
+Ret_2m
+Ret_3m
+Ret_5m
+Ret_10m
+Ret_15m
+Ret_30m
+Ret_60m
+
+Formula:
+Ret_Nm = Close[t] / Close[t-N] - 1
+
+7. Fitur candle shape
+---------------------
+High_Low_Range_pct = (High - Low) / Close
+Open_Close_pct = (Close - Open) / Open
+Upper_Wick_pct = (High - max(Open, Close)) / Close
+Lower_Wick_pct = (min(Open, Close) - Low) / Close
+Close_Position_in_Candle = (Close - Low) / (High - Low)
+
+Tujuan:
+Model tahu struktur candle tanpa tahu harga absolut.
+
+8. Fitur volume
+---------------
+Volume_Relative_20 = Volume / rolling_mean(Volume, 20)
+Volume_Relative_60 = Volume / rolling_mean(Volume, 60)
+Volume_Trend_5 = Volume[t] / Volume[t-5] - 1
+Volume_Trend_15 = Volume[t] / Volume[t-15] - 1
+Volume_ZScore_60 = (Volume - rolling_mean_60) / rolling_std_60
+
+Kalau volume IDR terlalu besar, jangan pakai mentah.
+Pakai relative/z-score saja.
+
+9. Fitur volatilitas
+--------------------
+Volatility_5 = rolling_std(Ret_1m, 5)
+Volatility_10 = rolling_std(Ret_1m, 10)
+Volatility_30 = rolling_std(Ret_1m, 30)
+Volatility_60 = rolling_std(Ret_1m, 60)
+
+Range_5 = rolling_mean(High_Low_Range_pct, 5)
+Range_15 = rolling_mean(High_Low_Range_pct, 15)
+Range_30 = rolling_mean(High_Low_Range_pct, 30)
+
+10. Fitur RSI
+-------------
+RSI_7
+RSI_14
+RSI_21
+
+Tambahan:
+RSI_14_delta = RSI_14[t] - RSI_14[t-5]
+RSI_14_zone:
+  oversold jika RSI < 30
+  neutral jika 30–70
+  overbought jika RSI > 70
+
+Untuk CatBoost bisa pakai categorical/binned feature, tapi optional.
+
+11. Fitur MACD
+--------------
+MACD_norm = MACD / Close
+MACD_signal_norm = MACD_signal / Close
+MACD_hist_norm = MACD_hist / Close
+MACD_hist_delta = MACD_hist_norm[t] - MACD_hist_norm[t-5]
+
+Wajib normalisasi MACD dengan Close.
+Jangan pakai MACD raw IDR.
+
+12. Fitur EMA/MA distance
+-------------------------
+EMA_9_distance = (Close - EMA_9) / Close
+EMA_21_distance = (Close - EMA_21) / Close
+EMA_50_distance = (Close - EMA_50) / Close
+EMA_100_distance = (Close - EMA_100) / Close
+EMA_200_distance = (Close - EMA_200) / Close
+
+MA_cross_9_21 = (EMA_9 - EMA_21) / Close
+MA_cross_21_50 = (EMA_21 - EMA_50) / Close
+MA_cross_50_200 = (EMA_50 - EMA_200) / Close
+
+13. Fitur Bollinger Band
+------------------------
+BB_mid = rolling_mean(Close, 20)
+BB_std = rolling_std(Close, 20)
+BB_upper = BB_mid + 2 * BB_std
+BB_lower = BB_mid - 2 * BB_std
+
+BB_position = (Close - BB_lower) / (BB_upper - BB_lower)
+BB_width = (BB_upper - BB_lower) / Close
+
+Gunakan BB_position dan BB_width.
+Jangan pakai BB_upper/lower absolut.
+
+14. Fitur momentum/trend
+------------------------
+Momentum_5 = Close / Close[t-5] - 1
+Momentum_15 = Close / Close[t-15] - 1
+Momentum_30 = Close / Close[t-30] - 1
+
+Trend_Strength_30 = abs(EMA_9 - EMA_50) / Close
+Trend_Direction_30 = 1 jika EMA_9 > EMA_50 else 0
+
+15. Fitur konteks 1 bulan
+-------------------------
+Model boleh tahu kondisi 1 bulan, tapi dalam bentuk ringkasan.
+
+Ret_1d
+Ret_3d
+Ret_7d
+Ret_14d
+Ret_30d
+
+Volatility_1d
+Volatility_7d
+Volatility_30d
+
+MA_Distance_1d
+MA_Distance_7d
+MA_Distance_30d
+
+Trend_1d
+Trend_7d
+Trend_30d
+
+Untuk data 1m:
+1d = 1440 candle
+7d = 10080 candle
+30d = 43200 candle
+
+Jangan masukkan 43.200 candle mentah.
+Gunakan ringkasan.
+
+16. Fitur multi-timeframe
+-------------------------
+Buat fitur dari candle agregasi:
+
+5m features:
+Ret_5m_agg
+RSI_5m
+MACD_5m_norm
+EMA_cross_5m
+Volatility_5m
+
+15m features:
+Ret_15m_agg
+RSI_15m
+MACD_15m_norm
+EMA_cross_15m
+Trend_15m
+
+1h features optional:
+Ret_1h
+RSI_1h
+Trend_1h
+
+17. Jumlah fitur
+----------------
+Awal yang bagus:
+30–60 fitur
+
+Jangan langsung ratusan fitur.
+Terlalu banyak fitur bisa overfit.
+
+Minimal bagus:
+- return features
+- RSI
+- MACD_norm
+- EMA distance
+- volume relative
+- volatility
+- candle shape
+- 5m/15m aggregate
+- 1d/7d/30d context
+
+18. Scaling
+-----------
+CatBoost tidak wajib scaling.
+LightGBM juga tidak wajib scaling.
+
+Tapi untuk konsistensi pipeline, boleh simpan feature order.
+
+Wajib simpan:
+feature_names_catboost_lightgbm_5m.json
+
+Jangan sampai training feature order beda dengan inference VPS.
+
+19. Split data
+--------------
+Jangan random split.
+
+Gunakan chronological split:
+Train: 70%
+Validation: 15%
+Test: 15% data paling baru
+
+Contoh:
+Train: 2017–2024
+Validation: 2025
+Test: 2026
+
+Alasan:
+Trading adalah time-series. Random split menyebabkan leakage.
+
+20. Class balance
+-----------------
+Wajib cek distribusi label:
+UP %
+DOWN %
+Skipped neutral %
+
+Jika tidak seimbang:
+CatBoost:
+auto_class_weights = Balanced
+atau class_weights manual
+
+LightGBM:
+class_weight = balanced
+
+21. CatBoost parameter awal
+---------------------------
+Rekomendasi awal:
+iterations = 1000 sampai 3000
+learning_rate = 0.03 sampai 0.08
+depth = 5 sampai 8
+loss_function = Logloss
+eval_metric = BalancedAccuracy atau AUC
+random_seed = 42
+auto_class_weights = Balanced
+allow_writing_files = False
+
+Early stopping:
+early_stopping_rounds = 100 sampai 200
+
+Penting:
+Kalau tree_count <= 1, model rusak/collapse.
+Jangan pakai early stopping terlalu agresif.
+
+22. LightGBM parameter awal
+---------------------------
+Rekomendasi awal:
+n_estimators = 1000 sampai 3000
+learning_rate = 0.03 sampai 0.08
+max_depth = 5 sampai 10
+num_leaves = 31 sampai 127
+subsample = 0.8
+colsample_bytree = 0.8
+class_weight = balanced
+random_state = 42
+objective = binary
+metric = binary_logloss atau auc
+
+Early stopping:
+early_stopping_rounds = 100 sampai 200
+
+23. Training dengan GPU PC RTX
+------------------------------
+CatBoost GPU:
+task_type = GPU
+
+LightGBM GPU:
+device = gpu
+
+Catatan:
+Model hasil training GPU tetap bisa inference di VPS CPU.
+
+24. Evaluasi wajib
+------------------
+Jangan cuma accuracy total.
+
+Cek:
+Overall accuracy
+UP accuracy
+DOWN accuracy
+Precision BUY
+Precision SELL
+Recall UP
+Recall DOWN
+AUC
+Confusion matrix
+Predicted UP %
+Probability mean
+Probability std
+Logloss
+Calibration curve optional
+
+25. Model sehat jika
+--------------------
+Test accuracy > 52–55%
+UP accuracy tidak 0%
+DOWN accuracy tidak 100% doang
+Predicted UP% tidak 0% / 100%
+Probability std tidak terlalu kecil
+AUC > 0.52
+Precision BUY pada threshold 0.58 lebih baik dari random
+
+26. Model rusak jika
+--------------------
+tree_count <= 1 pada CatBoost
+n_estimators_ <= 1 pada LightGBM
+prob selalu sekitar 0.5
+prob selalu <0.4 atau >0.6
+pred_up_pct = 0%
+pred_down_pct = 100%
+UP accuracy = 0%
+DOWN accuracy = 100%
+AUC <= 0.5
+Probability std < 0.5% jika output 0–100
+
+27. Threshold trading
+---------------------
+Jangan pakai 50% untuk BUY.
+
+Awal:
+BUY jika prob_up >= 0.58
+SELL / EXIT jika prob_up <= 0.42
+NO TRADE jika 0.42 < prob_up < 0.58
+
+Cari threshold terbaik dari validation set.
+
+28. Ensemble CatBoost + LightGBM
+--------------------------------
+Jangan rata-rata buta kalau salah satu model rusak.
+
+Default:
+CatBoost weight = 0.55
+LightGBM weight = 0.45
+
+Kalau salah satu collapse:
+model collapse weight = 0
+
+Kalau CatBoost lebih stabil:
+CatBoost weight = 0.65
+LightGBM weight = 0.35
+
+29. Simpan metadata model
+-------------------------
+Wajib simpan metadata masing-masing model:
+model_type
+pair
+data_interval = 1m
+prediction_horizon = 5
+feature_names
+train_start
+train_end
+validation_start
+validation_end
+test_start
+test_end
+target_threshold = 0.0005
+validation_accuracy
+test_accuracy
+up_accuracy
+down_accuracy
+auc
+pred_up_pct
+prob_std
+buy_threshold
+sell_threshold
+class_distribution
+skipped_neutral_count
+
+30. Export ke VPS
+-----------------
+CatBoost:
+catboost_btc_5m.cbm
+metadata_catboost_5m.json
+
+LightGBM:
+lightgbm_btc_5m.pkl
+atau lightgbm_btc_5m.txt
+metadata_lightgbm_5m.json
+
+Shared:
+feature_names_catboost_lightgbm_5m.json
+
+31. Cek sebelum deploy VPS
+--------------------------
+Pastikan:
+feature_names order sama persis
+Tidak ada fitur harga absolut
+MACD sudah / Close
+EMA distance sudah / Close
+Volume relative, bukan mentah
+Tidak ada NaN
+Tidak ada infinity
+Output probability 0–1 atau 0–100 konsisten
+Model tidak collapse
+
+32. Validasi inference VPS
+--------------------------
+Ambil 200–1000 candle terbaru dari VPS.
+Hitung fitur sama persis.
+Prediksi semua model.
+Cek:
+UP accuracy
+DOWN accuracy
+Predicted UP %
+Probability std
+Latest prediction
+
+33. Rekomendasi final
+---------------------
+data_interval = 1m
+prediction_horizon = 5m
+target_threshold = ±0.05%
+features = 30–60 relative features
+split = chronological
+class_weight = balanced
+CatBoost iterations = 1000–3000
+LightGBM n_estimators = 1000–3000
+early_stopping = 100–200
+threshold = BUY >= 0.58, SELL <= 0.42
+export = model + feature_names + metadata
+
+Inti:
+CatBoost dan LightGBM tidak melihat sequence panjang seperti TCN.
+Mereka melihat satu baris fitur kaya pada menit t, lalu menebak arah harga 5 menit ke depan.

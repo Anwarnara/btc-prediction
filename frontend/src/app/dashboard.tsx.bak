@@ -1,0 +1,738 @@
+"use client"
+
+import { useState, useEffect, useCallback } from "react"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Separator } from "@/components/ui/separator"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import {
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  Brush,
+  ReferenceArea,
+} from "recharts"
+import {
+  fetchDashboard,
+  fetchChartData,
+  runSimulation,
+  type DashboardData,
+  type ChartPoint,
+  type ForecastPoint,
+  type SimulateResponse,
+  type Trade,
+} from "@/lib/api"
+
+// API helpers for auto-trading
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+
+interface PortfolioData {
+  active: boolean
+  initial_capital: number
+  current_value: number
+  pnl: number
+  pnl_pct: number
+  position: string | null
+  entry_price: number
+  btc_amount: number
+  latest_price: number
+  trade_count: number
+  last_action: string
+  started_at: string | null
+  recent_trades: Trade[]
+}
+
+async function fetchPortfolio(): Promise<PortfolioData | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/portfolio`, { cache: "no-store" })
+    if (!res.ok) return null
+    return res.json()
+  } catch { return null }
+}
+
+async function startAutoTrade(capital: number): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/auto-trade/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ initial_capital: capital }),
+  })
+  return res.json()
+}
+
+async function stopAutoTrade(): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/auto-trade/stop`, {
+    method: "POST",
+  })
+  return res.json()
+}
+
+const REFRESH_INTERVAL = 60_000
+
+function PredictionCard({
+  title,
+  description,
+  prediction,
+}: {
+  title: string
+  description: string
+  prediction: DashboardData["pc_prediction"]
+}) {
+  const isUp = prediction.direction === "UP"
+  const bgColor = isUp ? "bg-green-500/10" : "bg-red-500/10"
+  const borderColor = isUp ? "border-green-500/30" : "border-red-500/30"
+
+  return (
+    <Card className={`${bgColor} ${borderColor} border`}>
+      <CardHeader className="pb-2 px-3 pt-3 sm:px-4 sm:pt-4">
+        <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground leading-tight">
+          {title}
+        </CardTitle>
+        <CardDescription className="text-[10px] sm:text-xs leading-tight">
+          {description}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="px-3 pb-3 sm:px-4 sm:pb-4">
+        <div className="space-y-2 sm:space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xl sm:text-2xl font-bold">
+              {prediction.ensemble !== null ? `${prediction.ensemble}%` : "—"}
+            </span>
+            <Badge
+              variant={isUp ? "default" : "destructive"}
+              className={isUp ? "text-green-400 text-xs" : "text-red-400 text-xs"}
+            >
+              {isUp ? "NAIK" : "TURUN"}
+            </Badge>
+          </div>
+          <Separator />
+          <div className="grid grid-cols-2 gap-2 text-[10px] sm:text-xs text-muted-foreground">
+            <div>
+              <span className="block opacity-60">CatBoost</span>
+              <span className="font-mono text-xs sm:text-sm">
+                {prediction.catboost !== null ? `${prediction.catboost.toFixed(1)}%` : "—"}
+              </span>
+            </div>
+            <div>
+              <span className="block opacity-60">LightGBM</span>
+              <span className="font-mono text-xs sm:text-sm">
+                {prediction.lightgbm !== null
+                  ? `${prediction.lightgbm.toFixed(1)}%`
+                  : "—"}
+              </span>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function PriceHero({ data }: { data: DashboardData | null }) {
+  if (!data) {
+    return (
+      <div className="text-center py-4 sm:py-8 animate-pulse">
+        <div className="h-6 w-36 sm:h-8 sm:w-48 bg-muted rounded mx-auto" />
+        <div className="h-3 w-24 sm:h-4 sm:w-32 bg-muted rounded mx-auto mt-2" />
+      </div>
+    )
+  }
+
+  const isUp = data.change_pct >= 0
+  const color = isUp ? "text-green-400" : "text-red-400"
+
+  return (
+    <div className="text-center py-3 sm:py-6">
+      <p className="text-[10px] sm:text-sm text-muted-foreground mb-1">BTC / IDR</p>
+      <h1 className="text-xl sm:text-3xl md:text-4xl font-bold tracking-tight break-all">
+        {data.price_formatted}
+      </h1>
+      <p className={`text-sm sm:text-lg mt-1 ${color}`}>
+        {isUp ? "▲" : "▼"} {Math.abs(data.change_pct).toFixed(4)}%
+      </p>
+      <p className="text-[10px] sm:text-xs text-muted-foreground mt-1">
+        {new Date(data.timestamp).toLocaleString("id-ID", {
+          timeZone: "Asia/Jakarta",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        })}{" "}
+        WIB
+      </p>
+    </div>
+  )
+}
+
+function PriceChart({ points, forecast }: { points: ChartPoint[]; forecast: ForecastPoint[] }) {
+  const [chartH, setChartH] = useState(380)
+  const [zoomLeft, setZoomLeft] = useState<string | null>(null)
+  const [zoomRight, setZoomRight] = useState<string | null>(null)
+  const [refLeft, setRefLeft] = useState<string>("")
+  const [refRight, setRefRight] = useState<string>("")
+  const [isDragging, setIsDragging] = useState(false)
+
+  useEffect(() => {
+    const update = () => setChartH(window.innerWidth < 640 ? 300 : 420)
+    update()
+    window.addEventListener("resize", update)
+    return () => window.removeEventListener("resize", update)
+  }, [])
+
+  if (!points || points.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-48 text-xs text-muted-foreground">
+        Belum ada data grafik
+      </div>
+    )
+  }
+
+  // Merge actual + forecast into one data array
+  // Actual points: price + pc/vps sinyal; Forecast points: predicted price only
+  const actualMap = points.map((p) => ({
+    time: new Date(p.time).toLocaleTimeString("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Jakarta",
+    }),
+    timeFull: p.time,
+    price: p.price,
+    priceForecast: null as number | null,
+    pcSinyal: p.pc_prediction,
+    vpsSinyal: p.vps_prediction,
+    isForecast: false,
+  }))
+
+  const forecastMap = forecast.map((f) => ({
+    time: new Date(f.time).toLocaleTimeString("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Jakarta",
+    }),
+    timeFull: f.time,
+    price: null as number | null,
+    priceForecast: f.price,
+    pcSinyal: f.pc_prediction,
+    vpsSinyal: f.vps_prediction,
+    isForecast: true,
+  }))
+
+  // Merge: actual + forecast, keep a connecting point
+  const chartData = [
+    ...actualMap,
+    // Connecting point: last actual price appears again as forecast start
+    { ...actualMap[actualMap.length - 1], time: "—", priceForecast: forecastMap[0]?.price ?? null, isForecast: true },
+    ...forecastMap,
+  ]
+
+  // All numeric values for Y domain
+  const allPrices = [...points.map((p) => p.price), ...forecast.map((f) => f.price)]
+  const yMin = allPrices.length ? Math.min(...allPrices) * 0.999 : 0
+  const yMax = allPrices.length ? Math.max(...allPrices) * 1.001 : 1
+  const domain: [number, number] = [yMin, yMax]
+
+  const fmtPrice = (v: number) =>
+    v >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : `${(v / 1e6).toFixed(0)}M`
+
+  const tooltipStyle = {
+    backgroundColor: "#0f172a",
+    border: "1px solid #1e293b",
+    borderRadius: "8px",
+    fontSize: "11px",
+    padding: "4px 6px",
+  }
+
+  const last = actualMap[actualMap.length - 1]
+
+  const resetZoom = () => {
+    setZoomLeft(null)
+    setZoomRight(null)
+    setRefLeft("")
+    setRefRight("")
+  }
+
+  const zoomIn = () => {
+    if (chartData.length < 6) return
+    const mid = Math.floor(chartData.length / 2)
+    const half = Math.max(3, Math.floor(chartData.length / 4))
+    setZoomLeft(chartData[mid - half].time)
+    setZoomRight(chartData[mid + half].time)
+  }
+
+  const zoomOut = () => {
+    const allTimes = chartData.map((d) => d.time)
+    if (!zoomLeft && !zoomRight) return
+    const startIdx = zoomLeft ? allTimes.indexOf(zoomLeft) : 0
+    const endIdx = zoomRight ? allTimes.indexOf(zoomRight) : allTimes.length - 1
+    const range = endIdx - startIdx
+    const expand = Math.floor(range * 0.5)
+    const newStart = Math.max(0, startIdx - expand)
+    const newEnd = Math.min(allTimes.length - 1, endIdx + expand)
+    if (newStart === 0 && newEnd === allTimes.length - 1) {
+      resetZoom()
+    } else {
+      setZoomLeft(allTimes[newStart])
+      setZoomRight(allTimes[newEnd])
+    }
+  }
+
+  const handleMouseDown = (e: any) => {
+    if (e?.activeLabel) {
+      setRefLeft(e.activeLabel)
+      setRefRight(e.activeLabel)
+      setIsDragging(true)
+    }
+  }
+
+  const handleMouseMove = (e: any) => {
+    if (isDragging && e?.activeLabel) {
+      setRefRight(e.activeLabel)
+    }
+  }
+
+  const handleMouseUp = () => {
+    if (isDragging && refLeft && refRight && refLeft !== refRight) {
+      const times = [refLeft, refRight].sort()
+      setZoomLeft(times[0])
+      setZoomRight(times[1])
+    }
+    setRefLeft("")
+    setRefRight("")
+    setIsDragging(false)
+  }
+
+  const refArea = refLeft && refRight && refLeft !== refRight ? (
+    <ReferenceArea
+      yAxisId="price"
+      x1={refLeft < refRight ? refLeft : refRight}
+      x2={refLeft < refRight ? refRight : refLeft}
+      strokeOpacity={0.3}
+      fill="#3b82f6"
+      fillOpacity={0.1}
+    />
+  ) : null
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1 px-1">
+        <p className="text-[10px] sm:text-xs text-muted-foreground">
+          💰 Harga BTC/IDR
+          {last && (
+            <span className="ml-2">
+              <span className={last.pcSinyal !== null && last.pcSinyal >= 50 ? "text-green-400" : "text-red-400"}>
+                PC {last.pcSinyal}% {last.pcSinyal !== null && last.pcSinyal >= 50 ? "▲" : "▼"}
+              </span>
+              <span className="mx-1">·</span>
+              <span className={last.vpsSinyal !== null && last.vpsSinyal >= 50 ? "text-green-400" : "text-red-400"}>
+                VPS {last.vpsSinyal}% {last.vpsSinyal !== null && last.vpsSinyal >= 50 ? "▲" : "▼"}
+              </span>
+            </span>
+          )}
+        </p>
+        <div className="flex gap-0.5">
+          <Button variant="outline" size="icon-sm" className="h-5 w-5 text-[9px]" onClick={zoomIn} title="Zoom in">+</Button>
+          <Button variant="outline" size="icon-sm" className="h-5 w-5 text-[9px]" onClick={zoomOut} title="Zoom out">−</Button>
+          <Button variant="outline" size="icon-sm" className="h-5 w-5 text-[9px]" onClick={resetZoom} title="Reset">⟲</Button>
+        </div>
+      </div>
+      <p className="text-[9px] text-muted-foreground px-1 mb-1 opacity-60">
+        ⬤ Aktual · - - Prediksi {forecast.length} menit
+        {zoomLeft != null && zoomRight != null ? ` · zoom ${chartData.filter((d) => d.time >= zoomLeft && d.time <= zoomRight).length} pts` : ""}
+      </p>
+      <ResponsiveContainer width="100%" height={chartH}>
+        <AreaChart
+          data={chartData}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+          <XAxis
+            dataKey="time"
+            stroke="#64748b"
+            fontSize={9}
+            tickLine={false}
+            interval="preserveStartEnd"
+          />
+          <YAxis
+            yAxisId="price"
+            stroke="#3b82f6"
+            fontSize={9}
+            tickLine={false}
+            width={55}
+            tickFormatter={fmtPrice}
+            domain={domain}
+          />
+          <Tooltip
+            contentStyle={tooltipStyle}
+            labelFormatter={(label: any) =>
+              new Date(chartData.find((d) => d.time === label)?.timeFull || label).toLocaleString(
+                "id-ID",
+                { timeZone: "Asia/Jakarta" }
+              )
+            }
+            formatter={(value: any, name: any) => {
+              if (name === "price") return [`Rp ${value.toLocaleString("id-ID")}`, "Aktual"]
+              if (name === "priceForecast") return [`Rp ${value.toLocaleString("id-ID")}`, "Prediksi"]
+              return [value, name]
+            }}
+          />
+          {/* Actual price — solid area */}
+          <Area
+            yAxisId="price"
+            type="monotone"
+            dataKey="price"
+            stroke="#3b82f6"
+            fill="#3b82f6"
+            fillOpacity={0.1}
+            strokeWidth={2}
+            dot={false}
+            animationDuration={300}
+          />
+          {/* Forecast price — dashed line */}
+          <Line
+            yAxisId="price"
+            type="monotone"
+            dataKey="priceForecast"
+            stroke="#fbbf24"
+            strokeWidth={2}
+            strokeDasharray="6 4"
+            dot={false}
+            opacity={0.85}
+            connectNulls={true}
+            isAnimationActive={false}
+          />
+          {refArea}
+          {/* PC/VPS arrows at last actual point */}
+          <Line
+            yAxisId="price"
+            type="monotone"
+            dataKey={(d: any) => !d.isForecast && d.pcSinyal !== null ? d.price : null}
+            stroke="#22c55e"
+            strokeWidth={0}
+            dot={(props: any) => {
+              const { cx, cy, payload } = props
+              if (!cx || !cy || payload?.pcSinyal === null || payload.isForecast) return null
+              if (payload.time !== actualMap[actualMap.length - 1].time) return null
+              const pct = payload.pcSinyal
+              const dir = pct >= 50 ? "▲" : "▼"
+              const color = pct >= 50 ? "#22c55e" : "#ef4444"
+              return (
+                <g>
+                  <circle cx={cx} cy={cy} r={5} fill={color} fillOpacity={0.3} />
+                  <circle cx={cx} cy={cy} r={3} fill={color} />
+                  <text x={cx} y={cy - 12} textAnchor="middle" fill={color} fontSize={13} fontWeight="bold">
+                    {dir}
+                  </text>
+                  <text x={cx + 24} y={cy + 4} textAnchor="start" fill={color} fontSize={9}>
+                    PC {pct}%
+                  </text>
+                </g>
+              )
+            }}
+            isAnimationActive={false}
+          />
+          <Line
+            yAxisId="price"
+            type="monotone"
+            dataKey={(d: any) => !d.isForecast && d.vpsSinyal !== null ? d.price : null}
+            stroke="#f97316"
+            strokeWidth={0}
+            dot={(props: any) => {
+              const { cx, cy, payload } = props
+              if (!cx || !cy || payload?.vpsSinyal === null || payload.isForecast) return null
+              if (payload.time !== actualMap[actualMap.length - 1].time) return null
+              return (
+                <g>
+                  <text x={cx + 24} y={cy - 8} textAnchor="start" fill="#f97316" fontSize={9}>
+                    VPS {payload.vpsSinyal}%
+                  </text>
+                </g>
+              )
+            }}
+            isAnimationActive={false}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+function AutoTradePanel({
+  portfolio,
+  onStart,
+  onStop,
+  loading,
+}: {
+  portfolio: PortfolioData | null
+  onStart: (capital: number) => void
+  onStop: () => void
+  loading: boolean
+}) {
+  const [capital, setCapital] = useState("10000000")
+
+  const formatRp = (v: number) => `Rp ${v.toLocaleString("id-ID")}`
+
+  // Live trading active
+  if (portfolio?.active) {
+    const isProfit = portfolio.pnl >= 0
+    return (
+      <Card className={`border-2 ${isProfit ? "border-green-500/40" : "border-red-500/40"}`}>
+        <CardHeader className="pb-1 px-3 pt-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-xs sm:text-sm">
+              🤖 Auto-Trading AKTIF
+            </CardTitle>
+            <Badge variant={isProfit ? "default" : "destructive"} className="text-[10px]">
+              {isProfit ? "PROFIT" : "LOSS"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="px-3 pb-3 space-y-2">
+          <div className="grid grid-cols-3 gap-1 text-center">
+            <div>
+              <p className="text-[9px] text-muted-foreground">Modal</p>
+              <p className="text-xs font-mono font-bold">{formatRp(portfolio.initial_capital)}</p>
+            </div>
+            <div>
+              <p className="text-[9px] text-muted-foreground">Nilai</p>
+              <p className="text-xs font-mono font-bold">{formatRp(portfolio.current_value)}</p>
+            </div>
+            <div>
+              <p className="text-[9px] text-muted-foreground">P/L</p>
+              <p className={`text-xs font-mono font-bold ${isProfit ? "text-green-400" : "text-red-400"}`}>
+                {isProfit ? "+" : ""}{portfolio.pnl_pct}%
+              </p>
+            </div>
+          </div>
+          <div className="text-center">
+            <span className={`text-sm font-bold ${isProfit ? "text-green-400" : "text-red-400"}`}>
+              {isProfit ? "+" : ""}{formatRp(portfolio.pnl)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-[9px] text-muted-foreground">
+            <span>{portfolio.position === "LONG" ? "📈 Posisi LONG" : "💤 Menunggu sinyal"}</span>
+            <span>{portfolio.trade_count} trade</span>
+          </div>
+          {portfolio.last_action && (
+            <p className="text-[9px] text-muted-foreground truncate">{portfolio.last_action}</p>
+          )}
+          <Button variant="destructive" size="sm" className="w-full text-xs" onClick={onStop} disabled={loading}>
+            ⏹ Stop Trading
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // Not running
+  return (
+    <Dialog>
+      <DialogTrigger>
+        <Button variant="outline" size="sm" className="text-xs px-2 sm:px-3">
+          🤖 Auto Trade
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-[450px] max-h-[85vh] overflow-y-auto p-4">
+        <DialogHeader>
+          <DialogTitle className="text-base">Auto-Trading Bot</DialogTitle>
+          <DialogDescription className="text-xs">
+            Bot akan BUY (prediksi ≥55%) dan SELL (prediksi ≤45%) otomatis setiap 1 menit.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Input
+              type="number"
+              placeholder="Modal (Rp)"
+              value={capital}
+              onChange={(e) => setCapital(e.target.value)}
+              className="font-mono text-sm flex-1"
+            />
+            <Button onClick={() => onStart(Number(capital))} disabled={loading} size="sm">
+              {loading ? "..." : "Mulai Trading"}
+            </Button>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Threshold: BUY ≥ 55% · SELL ≤ 45% · Cek tiap 1 menit
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export default function Dashboard() {
+  const [data, setData] = useState<DashboardData | null>(null)
+  const [chart, setChart] = useState<ChartPoint[]>([])
+  const [forecast, setForecast] = useState<ForecastPoint[]>([])
+  const [error, setError] = useState("")
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [portfolio, setPortfolio] = useState<PortfolioData | null>(null)
+  const [tradeLoading, setTradeLoading] = useState(false)
+
+  const refresh = useCallback(async () => {
+    try {
+      const [d, c] = await Promise.all([fetchDashboard(), fetchChartData()])
+      setData(d)
+      setChart(c.actual)
+      setForecast(c.forecast || [])
+      setLastUpdate(new Date())
+      setError("")
+
+      // Portfolio fetch separately - won't block dashboard
+      fetchPortfolio().then((p) => { if (p) setPortfolio(p) }).catch(() => {})
+    } catch (e: any) {
+      setError(e.message || "Fetch failed")
+      // Auto-retry after 3s
+      setTimeout(refresh, 3000)
+    }
+  }, [])
+
+  const handleStartTrade = async (capital: number) => {
+    setTradeLoading(true)
+    try {
+      await startAutoTrade(capital)
+      await refresh()
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setTradeLoading(false)
+    }
+  }
+
+  const handleStopTrade = async () => {
+    setTradeLoading(true)
+    try {
+      await stopAutoTrade()
+      await refresh()
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setTradeLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    refresh()
+    const interval = setInterval(refresh, REFRESH_INTERVAL)
+    return () => clearInterval(interval)
+  }, [refresh])
+
+  return (
+    <main className="min-h-screen bg-background text-foreground overflow-x-hidden">
+      <div className="max-w-4xl mx-auto px-2 sm:px-4 py-3 sm:py-6 space-y-3 sm:space-y-5">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-1 flex-wrap">
+          <div className="min-w-0">
+            <h2 className="text-sm sm:text-lg font-semibold truncate">
+              📊 BTC Prediction
+            </h2>
+            <p className="text-[9px] sm:text-xs text-muted-foreground hidden sm:block">
+              Monitor harga & prediksi BTC/IDR real-time
+            </p>
+          </div>
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {lastUpdate && (
+              <span className="text-[9px] sm:text-xs text-muted-foreground hidden sm:inline">
+                {lastUpdate.toLocaleTimeString("id-ID", { timeZone: "Asia/Jakarta" })}
+              </span>
+            )}
+            <Button variant="ghost" size="icon-sm" onClick={refresh} className="h-7 w-7">
+              🔄
+            </Button>
+            <AutoTradePanel
+              portfolio={portfolio}
+              onStart={handleStartTrade}
+              onStop={handleStopTrade}
+              loading={tradeLoading}
+            />
+          </div>
+        </div>
+
+        {error && (
+          <Card className="border-red-500/30 bg-red-500/5">
+            <CardContent className="py-2 px-3">
+              <p className="text-red-400 text-xs">Error: {error}</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Hero */}
+        <Card>
+          <CardContent className="p-2 sm:p-4">
+            <PriceHero data={data} />
+          </CardContent>
+        </Card>
+
+        {/* Prediction Cards */}
+        {data && (
+          <div className="grid grid-cols-2 gap-2 sm:gap-4">
+            <PredictionCard
+              title="🤖 Model PC"
+              description="Dilatih di PC — 3.5jt data Binance"
+              prediction={data.pc_prediction}
+            />
+            <PredictionCard
+              title="🖥️ Model VPS"
+              description={
+                data.vps_prediction.available
+                  ? "Dilatih dari data Indodax cron"
+                  : "⚠️ Belum tersedia"
+              }
+              prediction={data.vps_prediction}
+            />
+          </div>
+        )}
+
+        {/* Chart */}
+        <Card>
+          <CardHeader className="pb-1 px-3 pt-3 sm:px-4 sm:pt-4">
+            <CardTitle className="text-xs sm:text-sm">Chart Harga & Sinyal</CardTitle>
+          </CardHeader>
+          <CardContent className="p-1 sm:p-3">
+            <PriceChart points={chart} forecast={forecast} />
+          </CardContent>
+        </Card>
+
+        {/* Footer */}
+        <p className="text-center text-[9px] sm:text-xs text-muted-foreground pb-4">
+          Data: {data?.data_rows_used ?? "..."} baris · Refresh 1 menit ·
+          {data?.backend && (
+            <span className="ml-1">
+              <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${
+                data.backend.state === "training" ? "bg-yellow-400 animate-pulse" :
+                data.backend.state === "trading" ? "bg-green-400" :
+                data.backend.state === "syncing" ? "bg-blue-400" : "bg-green-500"
+              }`} />
+              {data.backend.state}
+              {data.backend.last_train_accuracy && ` · train: ${data.backend.last_train_accuracy}%`}
+            </span>
+          )}
+          <span className="hidden sm:inline"> · API :8001</span>
+        </p>
+      </div>
+    </main>
+  )
+}

@@ -1,0 +1,111 @@
+{
+  "model_type": "TCN",
+  "pair": "BTC",
+  "data_interval": "1m",
+  "prediction_horizon": 5,
+  "sequence_length": 240,
+  "target_threshold": 0.0005,
+  "feature_names": [
+    "Ret_1m",
+    "Ret_3m",
+    "Ret_5m",
+    "Ret_10m",
+    "Ret_15m",
+    "Ret_30m",
+    "High_Low_Range_pct",
+    "Close_Position_in_Candle",
+    "Volume_Relative",
+    "Volume_Trend",
+    "Volatility_10",
+    "Volatility_30",
+    "RSI_14",
+    "MACD_norm",
+    "MACD_signal_norm",
+    "MACD_hist_norm",
+    "EMA_9_distance",
+    "EMA_21_distance",
+    "EMA_50_distance",
+    "EMA_cross_9_21",
+    "Ret_1d",
+    "Ret_7d",
+    "Ret_30d",
+    "Volatility_30d",
+    "Trend_30d",
+    "Ret_5m_agg",
+    "RSI_5m",
+    "MACD_5m_norm",
+    "EMA_cross_5m",
+    "Ret_15m_agg",
+    "RSI_15m",
+    "Trend_15m"
+  ],
+  "scaler_type": "StandardScaler",
+  "train_start": "2019-11-23 05:47:00",
+  "train_end": "2023-06-25 02:27:00",
+  "validation_start": "2023-06-25 02:35:00",
+  "validation_end": "2024-03-29 05:15:00",
+  "test_start": "2024-03-29 05:16:00",
+  "test_end": "2026-06-06 17:58:00",
+  "validation_accuracy": 0.7967608190385608,
+  "test_accuracy": 0.7438327628820405,
+  "up_accuracy": 0.7129639378783891,
+  "down_accuracy": 0.7758227968956722,
+  "auc": 0.8282195655559451,
+  "pred_up_pct": 47.292980551719666,
+  "prob_std": Infinity,
+  "buy_threshold": 0.7,
+  "sell_threshold": 0.3,
+  "validation_metrics": {
+    "accuracy": 0.7967608190385608,
+    "up_accuracy": 0.8093801642053353,
+    "down_accuracy": 0.7835895470287881,
+    "precision_buy": 0.7960681621754105,
+    "precision_sell": 0.7975089166295141,
+    "recall_up": 0.8093801642053353,
+    "recall_down": 0.7835895470287881,
+    "auc": 0.8804369183243922,
+    "confusion_matrix": [
+      [
+        57242,
+        15809
+      ],
+      [
+        14534,
+        61712
+      ]
+    ],
+    "pred_up_pct": 51.92402005195618,
+    "prob_mean": 0.51220703125,
+    "prob_std": Infinity
+  },
+  "test_metrics": {
+    "accuracy": 0.7438327628820405,
+    "up_accuracy": 0.7129639378783891,
+    "down_accuracy": 0.7758227968956722,
+    "precision_buy": 0.7672185477360601,
+    "precision_sell": 0.7228491549116788,
+    "recall_up": 0.7129639378783891,
+    "recall_down": 0.7758227968956722,
+    "auc": 0.8282195655559451,
+    "confusion_matrix": [
+      [
+        56881,
+        16436
+      ],
+      [
+        21809,
+        54171
+      ]
+    ],
+    "pred_up_pct": 47.292980551719666,
+    "prob_mean": 0.482421875,
+    "prob_std": Infinity
+  },
+  "skipped_neutral_pct": 71.74635670639104,
+  "onnx_input_shape": [
+    "batch",
+    240,
+    32
+  ],
+  "onnx_output": "logit; prob_up = sigmoid(logit)"
+}

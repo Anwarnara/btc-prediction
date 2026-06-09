@@ -1,0 +1,329 @@
+POIN TRAINING MODEL TCN BTC PREDIKSI 5 MENIT
+================================================
+
+1. Tujuan model
+---------------
+Model: TCN classifier
+Pair: BTC
+Data interval: 1 menit
+Prediksi: arah harga 5 menit ke depan
+Output: prob_up 0–1
+
+2. Target prediksi
+------------------
+Gunakan horizon 5 menit:
+
+future_return = Close[t+5] / Close[t] - 1
+
+Label:
+Target = 1 jika future_return > +0.05%
+Target = 0 jika future_return < -0.05%
+Buang sample jika -0.05% <= future_return <= +0.05%
+
+Tujuan:
+Model tidak dipaksa menebak noise kecil.
+
+3. Input window
+---------------
+Jangan 1 bulan raw 1m.
+
+Rekomendasi:
+sequence_length = 240
+
+Artinya:
+240 candle × 1 menit = 4 jam terakhir
+
+Alternatif:
+120 = 2 jam, lebih ringan
+240 = 4 jam, rekomendasi
+360 = 6 jam, lebih berat
+
+4. Bentuk input TCN
+-------------------
+X shape = (samples, 240, n_features)
+y shape = (samples,)
+
+Contoh:
+X[t] = fitur dari menit t-239 sampai t
+y[t] = arah harga pada t+5
+
+5. Jangan pakai harga absolut
+-----------------------------
+Jangan input:
+Open mentah
+High mentah
+Low mentah
+Close mentah
+
+Alasan:
+BTC/USDT dan BTC/IDR beda skala, model bisa domain shift.
+
+6. Fitur utama 1m
+-----------------
+Gunakan fitur relatif:
+Ret_1m
+Ret_3m
+Ret_5m
+Ret_10m
+Ret_15m
+Ret_30m
+High_Low_Range_pct
+Close_Position_in_Candle
+Volume_Relative
+Volume_Trend
+Volatility_10
+Volatility_30
+
+7. Fitur teknikal
+-----------------
+RSI_14
+MACD_norm
+MACD_signal_norm
+MACD_hist_norm
+EMA_9_distance
+EMA_21_distance
+EMA_50_distance
+EMA_cross_9_21
+
+Normalisasi:
+MACD_norm = MACD / Close
+MACD_signal_norm = MACD_signal / Close
+MACD_hist_norm = MACD_hist / Close
+
+EMA_9_distance = (Close - EMA_9) / Close
+EMA_21_distance = (Close - EMA_21) / Close
+EMA_50_distance = (Close - EMA_50) / Close
+
+8. Fitur konteks 1 bulan
+------------------------
+Model boleh tahu kondisi 1 bulan, tapi jangan membaca 43.200 candle mentah.
+
+Tambahkan fitur ringkasan:
+Ret_1d
+Ret_3d
+Ret_7d
+Ret_14d
+Ret_30d
+
+Volatility_1d
+Volatility_7d
+Volatility_30d
+
+MA_Distance_1d
+MA_Distance_7d
+MA_Distance_30d
+
+Trend_1d
+Trend_7d
+Trend_30d
+
+9. Fitur multi-timeframe
+------------------------
+Tambahkan ringkasan 5m dan 15m:
+Ret_5m_agg
+RSI_5m
+MACD_5m_norm
+EMA_cross_5m
+
+Ret_15m_agg
+RSI_15m
+Trend_15m
+
+10. Jumlah fitur
+----------------
+Awal yang bagus:
+15–25 fitur
+
+Jangan terlalu banyak dulu.
+Pastikan semua fitur:
+relative
+stationary
+tidak pakai future data
+
+11. Scaling
+-----------
+Wajib:
+StandardScaler
+
+Aturan:
+fit scaler hanya pada train set
+transform validation/test pakai scaler train
+
+Jangan:
+fit scaler ke semua data
+
+Karena itu data leakage.
+
+Simpan:
+scaler_tcn_5m.pkl
+feature_names_tcn_5m.json
+
+12. Split data
+--------------
+Jangan random split.
+
+Gunakan chronological split:
+Train: 70%
+Validation: 15%
+Test: 15% data terbaru
+
+Contoh:
+Train: 2017–2024
+Validation: 2025
+Test: 2026
+
+13. Class balance
+-----------------
+Karena label UP/DOWN bisa tidak seimbang:
+pakai class_weight balanced
+
+Cek distribusi:
+UP %
+DOWN %
+Skipped neutral %
+
+Ideal:
+UP/DOWN tidak terlalu timpang ekstrem
+
+14. Arsitektur TCN
+------------------
+Rekomendasi awal:
+Input: 240 × n_features
+
+TCN blocks:
+channels: [64, 64, 128, 128]
+kernel_size: 3
+dilation: 1, 2, 4, 8
+dropout: 0.2
+
+Head:
+GlobalAveragePooling1D
+Dense 64
+Dropout 0.2
+Dense 1 sigmoid
+
+Output:
+prob_up = sigmoid(logit)
+
+15. Training config
+-------------------
+loss = BinaryCrossEntropy
+optimizer = AdamW
+learning_rate = 1e-3
+weight_decay = 1e-4
+batch_size = 512 atau 1024
+epochs = 30–80
+early_stopping_patience = 8–12
+reduce_lr_on_plateau = true
+
+16. Evaluasi wajib
+------------------
+Jangan cuma accuracy total.
+
+Cek:
+Overall accuracy
+UP accuracy
+DOWN accuracy
+Precision BUY
+Precision SELL
+Recall UP
+Recall DOWN
+AUC
+Confusion matrix
+Predicted UP %
+Probability mean
+Probability std
+
+17. Model sehat jika
+--------------------
+Test accuracy > 52–55%
+UP accuracy tidak 0%
+DOWN accuracy tidak 100% doang
+Predicted UP% tidak 0% / 100%
+Probability std tidak terlalu kecil
+AUC > 0.52
+
+18. Model rusak jika
+--------------------
+prob selalu 0.5
+prob selalu <0.4
+prob selalu >0.6
+pred_up_pct = 0%
+pred_down_pct = 100%
+UP accuracy = 0%
+DOWN accuracy = 100%
+AUC <= 0.5
+
+19. Threshold trading
+---------------------
+Jangan pakai 50%.
+
+Awal:
+BUY jika prob_up >= 0.58
+SELL / EXIT jika prob_up <= 0.42
+NO TRADE jika 0.42 < prob_up < 0.58
+
+Cari threshold terbaik dari validation set.
+
+20. Export ke VPS
+-----------------
+Export:
+tcn_btc_5m.onnx
+scaler_tcn_5m.pkl
+feature_names_tcn_5m.json
+metadata_tcn_5m.json
+
+21. Metadata wajib
+------------------
+Isi:
+model_type: TCN
+pair: BTC
+data_interval: 1m
+prediction_horizon: 5
+sequence_length: 240
+target_threshold: 0.0005
+feature_names: [...]
+scaler_type: StandardScaler
+train_start
+train_end
+validation_start
+validation_end
+test_start
+test_end
+validation_accuracy
+test_accuracy
+up_accuracy
+down_accuracy
+auc
+pred_up_pct
+prob_std
+buy_threshold
+sell_threshold
+
+22. Cek sebelum deploy
+----------------------
+Di VPS pastikan:
+ONNX input shape = [batch, 240, n_features]
+Scaler n_features = n_features
+feature_names order sama persis
+Output range 0–1
+Tidak ada NaN
+MACD sudah / Close
+EMA distance sudah / Close
+Tidak ada harga mentah
+
+23. Rekomendasi final
+---------------------
+data_interval = 1m
+prediction_horizon = 5m
+sequence_length = 240
+target_threshold = ±0.05%
+features = 15–25 relative features
+scaler = StandardScaler fit train only
+split = chronological
+loss = BCE + class_weight
+threshold = BUY >= 0.58, SELL <= 0.42
+export = ONNX + scaler + feature_names + metadata
+
+Inti:
+TCN melihat 4 jam terakhir, punya fitur konteks 1 bulan, lalu menebak arah 5 menit ke depan.
