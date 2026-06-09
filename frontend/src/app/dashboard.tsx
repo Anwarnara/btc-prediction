@@ -428,9 +428,14 @@ function PriceChart({ points, forecast }: { points: ChartPoint[]; forecast: Fore
           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
           <XAxis dataKey="time" fontSize={10} tickLine={false} axisLine={false} minTickGap={28} />
           <YAxis yAxisId="price" fontSize={10} tickLine={false} axisLine={false} width={56} tickFormatter={fmtPrice} domain={domain} />
+          <YAxis yAxisId="confidence" orientation="right" hide domain={[0, 100]} />
           <Tooltip
             contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 12 }}
-            formatter={(v: any, n: any) => [`Rp ${Number(v).toLocaleString("id-ID")}`, n === "price" ? "Aktual" : n === "forecast" ? "Prediksi" : n === "tcn" ? "TCN" : n === "pc" ? "PC" : n === "vps" ? "VPS" : n]}
+            formatter={(v: any, n: any) => {
+              if (n === "pc") return [`${Number(v).toFixed(2)}%`, "CatBoost+LightGBM"]
+              if (n === "tcn") return [`${Number(v).toFixed(2)}%`, "TCN"]
+              return [`Rp ${Number(v).toLocaleString("id-ID")}`, n === "price" ? "Aktual" : "Prediksi"]
+            }}
           />
           <Area
             yAxisId="price"
@@ -458,7 +463,19 @@ function PriceChart({ points, forecast }: { points: ChartPoint[]; forecast: Fore
             animationEasing="ease-out"
           />
           <Line
-            yAxisId="price"
+            yAxisId="confidence"
+            type="monotone"
+            dataKey="pc"
+            stroke="#a78bfa"
+            strokeWidth={1.9}
+            strokeDasharray="8 4"
+            dot={false}
+            isAnimationActive
+            animationDuration={650}
+            animationEasing="ease-out"
+          />
+          <Line
+            yAxisId="confidence"
             type="monotone"
             dataKey="tcn"
             stroke="#06b6d4"
@@ -643,7 +660,7 @@ export default function Dashboard() {
                     <CardTitle className="flex items-center gap-2 text-base">
                       <BarChart3 className="size-4 text-primary" /> Chart harga & prediksi
                     </CardTitle>
-                    <CardDescription>Solid = aktual, dashed = forecast model</CardDescription>
+                    <CardDescription>Biru = harga, kuning = forecast harga, ungu putus = CatBoost+LightGBM, cyan putus = TCN</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <PriceChart points={chart} forecast={forecast} />
