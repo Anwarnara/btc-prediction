@@ -188,7 +188,12 @@ class ModelManager:
             raw = self.tcn_session.run(None, {input_name: tensor})[0]
             logit = float(np.ravel(raw)[0])
             prob = _sigmoid(logit) * 100.0
-            return round(max(0, min(100, prob)), 2)
+            prob = max(0, min(100, prob))
+            # Guard: TCN trained on Binance saturates on Indodax live data (0% or 100%).
+            # Do not let it pollute ensemble.
+            if prob <= 2.0 or prob >= 98.0:
+                return None
+            return round(prob, 2)
         except Exception as e:
             print(f"[TCN-5M] Prediction failed: {e}")
             return None
@@ -291,6 +296,14 @@ class ModelManager:
             aw = float(sget('adapter_weight', 0.30) or 0.30)
             aw = max(0.0, min(0.7, aw))
             base = base * (1 - aw) + adapter_val * aw
+
+        # Apply calibration bias (systematic over/under confidence correction)
+        bias = float(sget('ensemble_bias', 0) or 0)
+        if abs(bias) >= 0.5:
+            # If bias is +3%, model was 3% under-confident; add 3% to prediction
+            base = base + bias
+            base = max(0, min(100, base))
+
         return round(base, 2)
 
     def ensemble_vps(self, probs: dict) -> float | None:

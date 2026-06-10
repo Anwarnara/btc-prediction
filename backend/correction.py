@@ -13,6 +13,7 @@ correction layer used in ensemble with small weight.
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from pathlib import Path
@@ -148,3 +149,76 @@ def train_indodax_adapter(min_samples: int = MIN_SAMPLES_DEFAULT) -> dict:
     ADAPTER_META.write_text(json.dumps(meta, indent=2), encoding="utf-8")
     compact_corrections()
     return meta
+
+
+def calibrate_ensemble_bias(min_samples: int = 200) -> dict:
+    """
+    Calculate systematic bias between predicted ensemble probability
+    and actual UP frequency from recent correction data.
+
+    Returns bias_adjustment: positive means model is under-confident (need to add),
+    negative means over-confident (need to subtract).
+    """
+    rows = load_corrections(limit=1000)
+    pairs = []
+    for r in rows:
+        pred = r.get("pc_pred")
+        target = r.get("target")
+        if pred is not None and target in (0, 1):
+            pairs.append((pred, target))
+    if len(pairs) < min_samples:
+        return {"bias_adjustment": 0, "samples": len(pairs), "info": "not enough"}
+    avg_pred = sum(p[0] for p in pairs) / len(pairs)
+    actual_up_pct = sum(p[1] for p in pairs) / len(pairs) * 100
+    bias = actual_up_pct - avg_pred
+    # Clamp to reasonable range
+    bias = max(-15, min(15, bias))
+    return {"bias_adjustment": round(bias, 2), "samples": len(pairs), "avg_pred": round(avg_pred, 2), "actual_up_pct": round(actual_up_pct, 2)}
+
+
+def calibrate_optimal_threshold(min_samples: int = 300) -> dict:
+    """
+    Find the optimal decision threshold by scanning values that maximize profit
+    (UP accuracy + DOWN accuracy) on recent correction data.
+
+    Returns optimal buy/sell thresholds for confidence-weighted trading.
+    """
+    rows = load_corrections(limit=1500)
+    targets = []
+    preds = []
+    for r in rows:
+        p = r.get("pc_pred")
+        t = r.get("target")
+        if p is not None and t in (0, 1):
+            preds.append(p)
+            targets.append(t)
+    if len(targets) < min_samples:
+        return {"buy_threshold": 70, "sell_threshold": 30, "samples": len(targets), "info": "not enough"}
+    n = len(targets)
+    best = {"profit_score": 0, "buy_t": 70, "sell_t": 30}
+    for buy_t in range(55, 90, 5):
+        for sell_t in range(10, 45, 5):
+            if sell_t >= buy_t:
+                continue
+            up_hits = sum(1 for i in range(n) if preds[i] >= buy_t and targets[i] == 1)
+            up_total = sum(1 for i in range(n) if preds[i] >= buy_t)
+            down_hits = sum(1 for i in range(n) if preds[i] <= sell_t and targets[i] == 0)
+            down_total = sum(1 for i in range(n) if preds[i] <= sell_t)
+            up_acc = up_hits / up_total if up_total > 0 else 0
+            down_acc = down_hits / down_total if down_total > 0 else 0
+            # Score = harmonic mean of UP accuracy and DOWN accuracy, weighted by trade count
+            if up_acc + down_acc > 0:
+                hmean = 2 * up_acc * down_acc / (up_acc + down_acc) if up_acc > 0 and down_acc > 0 else up_acc + down_acc
+                score = hmean * math.log(up_total + down_total + 2)
+                if score > best["profit_score"]:
+                    best = {"profit_score": round(score, 3), "buy_threshold": buy_t, "sell_threshold": sell_t, "up_acc": round(up_acc * 100, 1), "down_acc": round(down_acc * 100, 1), "up_trades": up_total, "down_trades": down_total}
+    return best
+
+
+def _ensure_settings_key(key: str, value) -> None:
+    """Update a setting if the key exists in settings, otherwise skip silently."""
+    try:
+        from settings import update as s_update, get as s_get
+        s_update({key: value})
+    except Exception:
+        pass

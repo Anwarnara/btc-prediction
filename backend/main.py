@@ -27,7 +27,7 @@ from models import model_manager
 from settings import get as setting_get, get_all as settings_all, update as settings_update
 from trainer import train_vps_models
 from cache import sync_cache_from_api, load_cache, get_cache_size
-from correction import append_correction, train_indodax_adapter, load_corrections, CORRECTIONS_FILE, ADAPTER_MODEL, ADAPTER_META
+from correction import append_correction, train_indodax_adapter, load_corrections, CORRECTIONS_FILE, ADAPTER_MODEL, ADAPTER_META, calibrate_ensemble_bias, calibrate_optimal_threshold, _ensure_settings_key
 
 # ──────────────────────────────────────────────
 # Background sync + auto-train + accuracy tracking
@@ -42,6 +42,37 @@ _last_retrain_time = 0
 _accuracy_log: list[dict] = []
 _wrong_examples: list[dict] = []
 _logged_correction_keys: set[str] = set()
+_corrections_since_last_adapter_train = 0
+_last_adapter_train_samples = 0
+_last_calibration_time = 0
+
+
+def _calibrate_ensemble_from_corrections() -> None:
+    global _last_calibration_time
+    now_ts = time.time()
+    if now_ts - _last_calibration_time < 3600:  # once per hour
+        return
+    _last_calibration_time = now_ts
+    bias = calibrate_ensemble_bias(min_samples=200)
+    if bias.get("samples", 0) >= 200 and abs(bias.get("bias_adjustment", 0)) >= 2:
+        _ensure_settings_key("ensemble_bias", bias["bias_adjustment"])
+        print(f"[Calibration] Bias={bias['bias_adjustment']}% (avg_pred={bias['avg_pred']}%, actual_up={bias['actual_up_pct']}%)")
+    else:
+        print(f"[Calibration] No significant bias (samples={bias.get('samples')}, bias={bias.get('bias_adjustment')})")
+
+
+def _adapt_trade_thresholds() -> None:
+    opt = calibrate_optimal_threshold(min_samples=300)
+    samples = opt.get("samples", 0)
+    if samples >= 300:
+        cur_buy = setting_get('trade_buy_threshold', 70)
+        cur_sell = setting_get('trade_sell_threshold', 30)
+        new_buy = opt.get("buy_threshold", 70)
+        new_sell = opt.get("sell_threshold", 30)
+        if abs(new_buy - cur_buy) >= 5 or abs(new_sell - cur_sell) >= 5:
+            _ensure_settings_key("trade_buy_threshold", new_buy)
+            _ensure_settings_key("trade_sell_threshold", new_sell)
+            print(f"[Threshold] Adapted: BUY {cur_buy}→{new_buy}, SELL {cur_sell}→{new_sell} | up_acc={opt.get('up_acc')}% down_acc={opt.get('down_acc')}% trades={opt.get('up_trades',0)+opt.get('down_trades',0)}")
 
 # Backend status for frontend
 _backend_status = {
@@ -59,7 +90,7 @@ _backend_status = {
 
 def evaluate_last_prediction():
     """Compare last prediction against actual price movement. Returns accuracy stats."""
-    global _accuracy_log, _wrong_examples, _logged_correction_keys
+    global _accuracy_log, _wrong_examples, _logged_correction_keys, _corrections_since_last_adapter_train
     rows = load_cache()
     if len(rows) < 3:
         return None
@@ -124,6 +155,7 @@ def evaluate_last_prediction():
                 "logged_at": datetime.now(WIB).isoformat(),
             })
             _logged_correction_keys.add(key)
+            _corrections_since_last_adapter_train += 1
             if len(_logged_correction_keys) > 5000:
                 _logged_correction_keys = set(list(_logged_correction_keys)[-2500:])
     except Exception as e:
@@ -273,6 +305,28 @@ async def background_sync():
                         _backend_status["train_count"] += 1
                         consecutive_wrong = 0
                     _train_running = False
+
+            # Auto-train Indodax adapter if enough new corrections
+            ADAPTER_RETRAIN_EVERY = setting_get('adapter_retrain_every', 200) or 200
+            if _corrections_since_last_adapter_train >= ADAPTER_RETRAIN_EVERY and not _train_running:
+                print(f"[Adapter] {_corrections_since_last_adapter_train} new corrections — retraining...")
+                _backend_status["state"] = "training"
+                _train_running = True
+                loop = asyncio.get_event_loop()
+                train_result = await loop.run_in_executor(None, train_indodax_adapter, 200)
+                if "error" not in train_result:
+                    model_manager.reload_adapter()
+                    _corrections_since_last_adapter_train = 0
+                    print(f"[Adapter] Retrained: acc={train_result.get('accuracy')} auc={train_result.get('auc')}")
+                _train_running = False
+
+            # Probability calibration: adjust bias based on recent correction data.
+            # If correction samples exist, compare predicted probability vs actual UP frequency
+            # to detect systematic over/under confidence.
+            _calibrate_ensemble_from_corrections()
+
+            # Adaptive trading thresholds from calibration
+            _adapt_trade_thresholds()
 
             # Back to idle
             if not should_retrain or not _train_running:

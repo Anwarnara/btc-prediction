@@ -33,6 +33,8 @@ DEFAULTS = {
     "ml_iterations_min": 50,
     "ml_learning_rate": 0.08,
     "ml_depth": 5,
+    "ensemble_bias": 0,
+    "adapter_retrain_every": 200,
 }
 
 # min/max guardrails; broad enough for experimentation, narrow enough to avoid crashes.
@@ -58,6 +60,8 @@ LIMITS = {
     "ml_iterations_min": (1, 1000),
     "ml_learning_rate": (0.001, 1.0),
     "ml_depth": (1, 12),
+    "ensemble_bias": (-20, 20),
+    "adapter_retrain_every": (50, 5000),
 }
 
 
