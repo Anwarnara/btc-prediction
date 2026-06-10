@@ -478,18 +478,20 @@ function PriceChart({ points, forecast }: { points: ChartPoint[]; forecast: Fore
             animationDuration={650}
             animationEasing="ease-out"
           />
-          <Line
-            yAxisId="confidence"
-            type="monotone"
-            dataKey="tcn"
-            stroke="#06b6d4"
-            strokeWidth={1.8}
-            strokeDasharray="2 6"
-            dot={false}
-            isAnimationActive
-            animationDuration={650}
-            animationEasing="ease-out"
-          />
+          {visibleData.some((d) => d.tcn !== null && d.tcn !== undefined && d.tcn !== 0) && (
+            <Line
+              yAxisId="price"
+              type="monotone"
+              dataKey="tcn"
+              stroke="#06b6d4"
+              strokeWidth={1.8}
+              strokeDasharray="2 6"
+              dot={false}
+              isAnimationActive
+              animationDuration={650}
+              animationEasing="ease-out"
+            />
+          )}
         </AreaChart>
       </ResponsiveContainer>
       </div>
