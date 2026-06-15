@@ -207,7 +207,7 @@ def evaluate_last_prediction():
 
 async def background_sync():
     """Run cache sync every 60s. Auto-trade. Evaluate accuracy. Auto-retrain on wrong preds or trade loss."""
-    global _last_sync, _train_running
+    global _last_sync, _train_running, _corrections_since_last_adapter_train
     consecutive_wrong = 0
     while True:
         await asyncio.sleep(setting_get('sync_interval'))
@@ -248,61 +248,38 @@ async def background_sync():
                                 print(f"[Trade-Loss] Unrealized loss {unrealized_pnl_pct:.1f}% (>5%) — will retrain")
             _backend_status["portfolio_active"] = _portfolio["active"]
 
-            # Evaluate prediction accuracy
+            # Evaluate prediction accuracy (log only, no auto-retrain trigger)
             acc = evaluate_last_prediction()
-            should_retrain = False
-            reason = ""
-
-            if trade_loss:
-                should_retrain = True
-                reason = "trade loss"
 
             if acc:
                 print(f"[Accuracy] PC={acc['pc_accuracy']}% ({acc['pc_samples']} samples)"
                       f" | VPS={acc.get('vps_accuracy')}%")
 
-                # Track consecutive wrong predictions
-                pc_wrong = not acc.get("last_correct", {}).get("pc", True)
-                if pc_wrong:
-                    consecutive_wrong += 1
-                else:
-                    consecutive_wrong = 0
-
-                # Auto-retrain conditions
-                if not should_retrain:
-                    if acc["pc_accuracy"] < setting_get('accuracy_threshold') or \
-                       (acc.get("vps_accuracy") is not None and acc["vps_accuracy"] < setting_get('accuracy_threshold')):
-                        should_retrain = True
-                        reason = f"accuracy low (PC={acc['pc_accuracy']}%)"
-                    elif consecutive_wrong >= setting_get('consecutive_wrong_retrain', 5):
-                        should_retrain = True
-                        reason = f"{consecutive_wrong} consecutive wrong predictions"
-                    elif acc.get("pc_pred") is not None and (acc["pc_pred"] >= 80 or acc["pc_pred"] <= 20) and pc_wrong:
-                        should_retrain = True
-                        reason = f"overconfident wrong prediction ({acc['pc_pred']:.0f}%)"
-
-            if should_retrain and result["cached"] >= setting_get('auto_train_min_rows') and not _train_running:
-                # Check cooldown
+            # ── Auto-retrain CatBoost v2 every 10 minutes ──
+            if result["cached"] >= setting_get('auto_train_min_rows') and not _train_running:
                 now_ts = time.time()
                 since_last = now_ts - _last_retrain_time
-                if _last_retrain_time > 0 and since_last < setting_get('retrain_cooldown'):
-                    mins_left = int((setting_get('retrain_cooldown') - since_last) / 60)
-                    print(f"[Auto-Retrain] Cooldown: {mins_left}min until next retrain (reason: {reason})")
-                else:
-                    print(f"[Auto-Retrain] {reason} — retraining VPS models...")
+                if since_last >= 600:  # 10 minutes
+                    wrong_snapshot = list(_wrong_examples) if _wrong_examples else None
+                    if wrong_snapshot and len(wrong_snapshot) >= 3:
+                        print(f"[Auto-Retrain] {len(wrong_snapshot)} wrong examples — retraining CatBoost v2...")
+                    else:
+                        print(f"[Auto-Retrain] Periodic retrain — refreshing CatBoost v2 (wrong={len(wrong_snapshot) if wrong_snapshot else 0})")
                     _backend_status["state"] = "training"
                     _train_running = True
                     _last_retrain_time = now_ts
                     loop = asyncio.get_event_loop()
-                    wrong_snapshot = list(_wrong_examples[-setting_get('max_wrong_examples'):]) if _wrong_examples else None
                     train_result = await loop.run_in_executor(None, train_vps_models, wrong_snapshot)
                     if "error" not in train_result:
+                        model_manager.load_all(force=True)
                         cb_acc = train_result.get('catboost_accuracy', 0)
                         lgb_acc = train_result.get('lightgbm_accuracy', 0)
-                        print(f"[Auto-Retrain] Done: CB={cb_acc}% LGBM={lgb_acc}%")
+                        print(f"[Auto-Retrain] Done: CBv2={cb_acc}% LGBMv2={lgb_acc}%")
                         _backend_status["last_train_time"] = datetime.now(WIB).isoformat()
                         _backend_status["last_train_accuracy"] = max(cb_acc, lgb_acc if lgb_acc else 0)
                         _backend_status["train_count"] += 1
+                        # Clear wrong examples so buffer starts fresh for next 10-min window
+                        _wrong_examples.clear()
                         consecutive_wrong = 0
                     _train_running = False
 
@@ -329,7 +306,7 @@ async def background_sync():
             _adapt_trade_thresholds()
 
             # Back to idle
-            if not should_retrain or not _train_running:
+            if not _train_running:
                 _backend_status["state"] = "idle" if not _portfolio["active"] else "trading"
 
         except Exception as e:
@@ -558,7 +535,6 @@ async def chart_data(limit: int = Query(default=200, le=1000),
                 "price": p["price"],
                 "pc_prediction": pc_smooth[i],
                 "vps_prediction": vps_smooth[i],
-                "tcn_prediction": tcn_smooth[i],
                 "direction": p["direction"],
             })
         actual_pts = actual_pts[-hist_limit:]
