@@ -815,7 +815,11 @@ _portfolio = _load_portfolio()
 
 
 def execute_auto_trade():
-    """Execute one trading decision based on current model prediction."""
+    """Execute one trading decision based on current model prediction.
+    Features:
+    - BUY only when confidence >= 70%
+    - SELL when confidence <= 35% OR stop-loss -1.5% OR take-profit +1.5%
+    """
     global _portfolio
     if not _portfolio["active"]:
         return None
@@ -842,8 +846,15 @@ def execute_auto_trade():
     price = float(df["Close"].iloc[-1])
     now = datetime.now(WIB).isoformat()
     action = None
+    
+    # Stop-loss and take-profit thresholds (from settings)
+    STOP_LOSS_PCT = setting_get('stop_loss_pct') or -1.5
+    TAKE_PROFIT_PCT = setting_get('take_profit_pct') or 1.5
+    
+    buy_threshold = setting_get('trade_buy_threshold')
+    sell_threshold = setting_get('trade_sell_threshold')
 
-    if _portfolio["position"] is None and pc_ens >= setting_get('trade_buy_threshold'):
+    if _portfolio["position"] is None and pc_ens >= buy_threshold:
         # BUY
         _portfolio["btc_amount"] = _portfolio["capital"] / price
         _portfolio["entry_price"] = price
@@ -858,22 +869,39 @@ def execute_auto_trade():
             "capital": round(_portfolio["capital"], 0),
         })
 
-    elif _portfolio["position"] == "LONG" and pc_ens <= setting_get('trade_sell_threshold'):
-        # SELL
-        _portfolio["capital"] = _portfolio["btc_amount"] * price
-        pnl = _portfolio["capital"] - _portfolio["initial_capital"]
-        action = "SELL"
-        _portfolio["trades"].append({
-            "time": now,
-            "action": "SELL",
-            "price": price,
-            "prediction": round(pc_ens, 1),
-            "btc_amount": round(_portfolio["btc_amount"], 8),
-            "capital": round(_portfolio["capital"], 0),
-            "pnl": round(pnl, 0),
-        })
-        _portfolio["position"] = None
-        _portfolio["btc_amount"] = 0.0
+    elif _portfolio["position"] == "LONG":
+        # Check stop-loss / take-profit
+        unrealized_pnl_pct = ((price - _portfolio["entry_price"]) / _portfolio["entry_price"]) * 100
+        
+        should_sell = False
+        sell_reason = ""
+        
+        if unrealized_pnl_pct <= STOP_LOSS_PCT:
+            should_sell = True
+            sell_reason = f"stop-loss ({unrealized_pnl_pct:.1f}%)"
+        elif unrealized_pnl_pct >= TAKE_PROFIT_PCT:
+            should_sell = True
+            sell_reason = f"take-profit ({unrealized_pnl_pct:.1f}%)"
+        elif pc_ens <= sell_threshold:
+            should_sell = True
+            sell_reason = f"signal ({pc_ens:.0f}%)"
+        
+        if should_sell:
+            _portfolio["capital"] = _portfolio["btc_amount"] * price
+            pnl = _portfolio["capital"] - _portfolio["initial_capital"]
+            action = "SELL"
+            _portfolio["trades"].append({
+                "time": now,
+                "action": "SELL",
+                "price": price,
+                "prediction": round(pc_ens, 1),
+                "btc_amount": round(_portfolio["btc_amount"], 8),
+                "capital": round(_portfolio["capital"], 0),
+                "pnl": round(pnl, 0),
+                "reason": sell_reason,
+            })
+            _portfolio["position"] = None
+            _portfolio["btc_amount"] = 0.0
 
     if action:
         _portfolio["last_action"] = f"{action}@{fmt_idr(price)} ({pc_ens:.0f}%)"

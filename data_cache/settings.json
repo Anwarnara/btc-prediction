@@ -3,8 +3,10 @@
   "auto_train_min_rows": 30,
   "retrain_cooldown": 300,
   "accuracy_threshold": 45,
-  "trade_buy_threshold": 50,
-  "trade_sell_threshold": 30,
+  "trade_buy_threshold": 70,
+  "trade_sell_threshold": 35,
+  "stop_loss_pct": -1.5,
+  "take_profit_pct": 1.5,
   "unrealized_loss_threshold": -5.0,
   "max_wrong_examples": 200,
   "max_acc_log": 50,
@@ -19,5 +21,7 @@
   "ml_iterations_max": 300,
   "ml_iterations_min": 50,
   "ml_learning_rate": 0.08,
-  "ml_depth": 5
+  "ml_depth": 5,
+  "ensemble_bias": 0,
+  "adapter_retrain_every": 200
 }
